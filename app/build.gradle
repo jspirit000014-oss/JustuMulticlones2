@@ -4,7 +4,6 @@ plugins {
 }
 
 android {
-
     namespace 'top.niunaijun.blackboxa'
     compileSdk rootProject.ext.compileSdkVersion
     ndkVersion = "29.0.13846066"
@@ -21,7 +20,6 @@ android {
             abi {
                 enable true
                 reset()
-                
                 include 'armeabi-v7a', "arm64-v8a"
                 universalApk true
             }
@@ -35,31 +33,27 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
+
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_21
         targetCompatibility JavaVersion.VERSION_21
     }
+
     buildFeatures {
         viewBinding true
-    }
-    kotlinOptions {
-    buildFeatures {
         compose true
     }
+
     composeOptions {
         kotlinCompilerExtensionVersion "1.5.3"
     }
+
+    kotlinOptions {
         jvmTarget = '21'
     }
 
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
-    implementation "androidx.compose.ui:ui:1.5.3"
-    implementation "androidx.compose.material:material:1.5.3"
-    implementation "androidx.compose.material:material-icons-extended:1.5.3"
-    implementation "androidx.compose.ui:ui-tooling-preview:1.5.3"
-    implementation "androidx.activity:activity-compose:1.8.0"
-    implementation "androidx.compose.foundation:foundation:1.5.3"
             output.outputFileName = "BlackBox_${variant.versionName}_${output.baseName}.apk"
         }
     }
@@ -78,33 +72,31 @@ dependencies {
     androidTestImplementation libs.espresso.core
 
     implementation "androidx.preference:preference-ktx:1.1.1"
-    
+
     implementation "androidx.lifecycle:lifecycle-viewmodel-ktx:2.3.1"
     implementation "androidx.lifecycle:lifecycle-livedata-ktx:2.3.1"
     implementation "androidx.lifecycle:lifecycle-runtime-ktx:2.3.1"
 
-    
     implementation 'androidx.recyclerview:recyclerview:1.2.1'
     implementation 'com.gitee.cbfg5210:RVAdapter:0.3.7'
 
-    
     implementation 'com.github.Othershe:CornerLabelView:1.0.0'
-    
+
     implementation 'com.github.nukc.stateview:kotlin:2.2.0'
-    
+
     implementation 'com.github.Ferfalk:SimpleSearchView:0.2.0'
     implementation 'com.tbuonomo:dotsindicator:4.2'
-    
     implementation 'org.osmdroid:osmdroid-android:6.1.11'
-    
+
     implementation 'com.afollestad.material-dialogs:core:3.3.0'
     implementation 'com.afollestad.material-dialogs:input:3.3.0'
 
-
-
-
-
-    
     implementation 'androidx.work:work-runtime:2.7.1'
 
+    implementation "androidx.compose.ui:ui:1.5.3"
+    implementation "androidx.compose.material:material:1.5.3"
+    implementation "androidx.compose.material:material-icons-extended:1.5.3"
+    implementation "androidx.compose.ui:ui-tooling-preview:1.5.3"
+    implementation "androidx.activity:activity-compose:1.8.0"
+    implementation "androidx.compose.foundation:foundation:1.5.3"
 }

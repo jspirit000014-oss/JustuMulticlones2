@@ -43,11 +43,23 @@ android {
         viewBinding true
     }
     kotlinOptions {
+    buildFeatures {
+        compose true
+    }
+    composeOptions {
+        kotlinCompilerExtensionVersion "1.5.3"
+    }
         jvmTarget = '21'
     }
 
     applicationVariants.configureEach { variant ->
         variant.outputs.configureEach { output ->
+    implementation "androidx.compose.ui:ui:1.5.3"
+    implementation "androidx.compose.material:material:1.5.3"
+    implementation "androidx.compose.material:material-icons-extended:1.5.3"
+    implementation "androidx.compose.ui:ui-tooling-preview:1.5.3"
+    implementation "androidx.activity:activity-compose:1.8.0"
+    implementation "androidx.compose.foundation:foundation:1.5.3"
             output.outputFileName = "BlackBox_${variant.versionName}_${output.baseName}.apk"
         }
     }

@@ -2,433 +2,513 @@ package top.niunaijun.blackboxa.view.main
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
-import android.net.VpnService
+import android.content.SharedPreferences
+import android.content.pm.ApplicationInfo
+import android.content.pm.PackageInfo
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.util.Log
-import android.view.Menu
-import android.view.MenuItem
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.core.content.edit
-import androidx.viewpager2.widget.ViewPager2
-import com.afollestad.materialdialogs.MaterialDialog
-import com.afollestad.materialdialogs.input.input
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.*
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.*
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import top.niunaijun.blackbox.BlackBoxCore
-import top.niunaijun.blackboxa.R
-import top.niunaijun.blackboxa.app.App
-import top.niunaijun.blackboxa.app.AppManager
-import top.niunaijun.blackboxa.databinding.ActivityMainBinding
-import top.niunaijun.blackboxa.util.Resolution
-import top.niunaijun.blackboxa.util.inflate
-import top.niunaijun.blackboxa.view.apps.AppsFragment
-import top.niunaijun.blackboxa.view.base.LoadingActivity
-import top.niunaijun.blackboxa.view.fake.FakeManagerActivity
-import top.niunaijun.blackboxa.view.list.ListActivity
-import top.niunaijun.blackboxa.view.setting.SettingActivity
 
-class MainActivity : LoadingActivity() {
+// ─── Colores ──────────────────────────────────────────────────────────────────
+private val BgDark       = Color(0xFF0D0D0D)
+private val CardDark     = Color(0xFF1A1A1A)
+private val AccentBlue   = Color(0xFF1A73E8)
+private val AccentBlue2  = Color(0xFF0D47A1)
+private val TextPrimary  = Color(0xFFFFFFFF)
+private val TextSecond   = Color(0xFF888888)
+private val DividerColor = Color(0xFF252525)
 
-    private val viewBinding: ActivityMainBinding by inflate()
+private const val TAG = "JustuMainActivity"
+private const val PREFS_NAME = "justumulticlones_prefs"
 
-    private lateinit var mViewPagerAdapter: ViewPagerAdapter
+// ─── Modelo ───────────────────────────────────────────────────────────────────
+data class CloneSpace(val id: Int, val userId: Int, val apps: MutableList<DeviceApp> = mutableStateListOf())
+data class DeviceApp(val pkgName: String, val label: String, val bitmap: ImageBitmap)
 
-    private val fragmentList = mutableListOf<AppsFragment>()
+// ─── Persistencia ─────────────────────────────────────────────────────────────
+fun saveSpacesData(context: Context, spaces: List<CloneSpace>) {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val editor = prefs.edit()
+    editor.putInt("space_count", spaces.size)
+    spaces.forEach { space ->
+        val pkgs = space.apps.joinToString(",") { it.pkgName }
+        editor.putString("space_${space.id}_apps", pkgs)
+    }
+    editor.apply()
+}
 
-    private var currentUser = 0
+fun loadSpaceCount(context: Context): Int {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    return prefs.getInt("space_count", 1)
+}
+
+fun loadSpacePkgs(context: Context, spaceId: Int): List<String> {
+    val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    val str = prefs.getString("space_${spaceId}_apps", "") ?: ""
+    return if (str.isBlank()) emptyList() else str.split(",").filter { it.isNotBlank() }
+}
+
+// ─── Activity ─────────────────────────────────────────────────────────────────
+class MainActivity : ComponentActivity() {
 
     companion object {
-        private const val TAG = "MainActivity"
-        private const val STORAGE_PERMISSION_REQUEST_CODE = 1001
-        private const val VPN_PERMISSION_REQUEST_CODE = 1002
-
         fun start(context: Context) {
-            val intent = Intent(context, MainActivity::class.java)
-            context.startActivity(intent)
+            context.startActivity(Intent(context, MainActivity::class.java))
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
         try {
-            super.onCreate(savedInstanceState)
-
-            try {
-                BlackBoxCore.get().onBeforeMainActivityOnCreate(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onBeforeMainActivityOnCreate: ${e.message}")
-            }
-
-            setContentView(viewBinding.root)
-            initToolbar(viewBinding.toolbarLayout.toolbar, R.string.app_name)
-            initViewPager()
-            initFab()
-            initToolbarSubTitle()
-
-            
-            checkStoragePermission()
-
-            
-            checkVpnPermission()
-
-            try {
-                BlackBoxCore.get().onAfterMainActivityOnCreate(this)
-            } catch (e: Exception) {
-                Log.e(TAG, "Error in onAfterMainActivityOnCreate: ${e.message}")
-            }
+            BlackBoxCore.get().onBeforeMainActivityOnCreate(this)
         } catch (e: Exception) {
-            Log.e(TAG, "Critical error in onCreate: ${e.message}")
-            
-            showErrorDialog("Failed to initialize app: ${e.message}")
+            Log.e(TAG, "onBeforeMainActivityOnCreate: ${e.message}")
         }
-    }
 
-    private fun checkStoragePermission() {
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                
-                if (!android.os.Environment.isExternalStorageManager()) {
-                    Log.w(TAG, "MANAGE_EXTERNAL_STORAGE permission not granted")
-                    showStoragePermissionDialog()
-                }
-            } else {
-                
-                if (androidx.core.content.ContextCompat.checkSelfPermission(
-                                this,
-                                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-                        ) != android.content.pm.PackageManager.PERMISSION_GRANTED ||
-                                androidx.core.content.ContextCompat.checkSelfPermission(
-                                        this,
-                                        android.Manifest.permission.READ_EXTERNAL_STORAGE
-                                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    Log.w(
-                            TAG,
-                            "Storage permissions not granted on Android ${android.os.Build.VERSION.SDK_INT}"
-                    )
-                    requestLegacyStoragePermission()
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error checking storage permission: ${e.message}")
-        }
-    }
-
-    private fun requestLegacyStoragePermission() {
-        try {
-            androidx.core.app.ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(
-                            android.Manifest.permission.READ_EXTERNAL_STORAGE,
-                            android.Manifest.permission.WRITE_EXTERNAL_STORAGE
-                    ),
-                    STORAGE_PERMISSION_REQUEST_CODE
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error requesting storage permission: ${e.message}")
-        }
-    }
-
-    override fun onRequestPermissionsResult(
-            requestCode: Int,
-            permissions: Array<out String>,
-            grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == STORAGE_PERMISSION_REQUEST_CODE) {
-            if (grantResults.isNotEmpty() &&
-                            grantResults.all {
-                                it == android.content.pm.PackageManager.PERMISSION_GRANTED
-                            }
-            ) {
-                Log.d(TAG, "Storage permissions granted")
-            } else {
-                Log.w(TAG, "Storage permissions denied")
-            }
-        }
-    }
-
-    private fun showStoragePermissionDialog() {
-        try {
-            MaterialDialog(this).show {
-                title(text = "Storage Permission Required")
-                message(
-                        text =
-                                "This app needs 'All Files Access' permission to properly run sandboxed apps. Without this permission, some apps may not work correctly.\n\nPlease grant permission in the next screen."
+        setContent {
+            MaterialTheme(
+                colors = darkColors(
+                    background   = BgDark,
+                    surface      = CardDark,
+                    primary      = AccentBlue,
+                    secondary    = AccentBlue2,
+                    onBackground = TextPrimary,
+                    onSurface    = TextPrimary
                 )
-                positiveButton(text = "Grant Permission") { openAllFilesAccessSettings() }
-                negativeButton(text = "Later") { Log.w(TAG, "User postponed storage permission") }
-                cancelable(false)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing storage permission dialog: ${e.message}")
-        }
-    }
-
-    private fun openAllFilesAccessSettings() {
-        try {
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                val intent =
-                        Intent(
-                                android.provider.Settings
-                                        .ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION
-                        )
-                intent.data = Uri.parse("package:$packageName")
-                storagePermissionResult.launch(intent)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error opening storage settings: ${e.message}")
-            
-            try {
-                val intent =
-                        Intent(android.provider.Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                storagePermissionResult.launch(intent)
-            } catch (e2: Exception) {
-                Log.e(TAG, "Error opening fallback storage settings: ${e2.message}")
-            }
-        }
-    }
-
-    private val storagePermissionResult =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                try {
-                    if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
-                        if (android.os.Environment.isExternalStorageManager()) {
-                            Log.d(TAG, "Storage permission granted!")
-                        } else {
-                            Log.w(TAG, "Storage permission still not granted")
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error handling storage permission result: ${e.message}")
+            ) {
+                Surface(color = BgDark, modifier = Modifier.fillMaxSize()) {
+                    JustuRoot()
                 }
             }
+        }
 
-    
-    private fun checkVpnPermission() {
         try {
-            val vpnIntent = VpnService.prepare(this)
-            if (vpnIntent != null) {
-                
-                Log.d(TAG, "VPN permission not granted, requesting...")
-                vpnPermissionResult.launch(vpnIntent)
-            } else {
-                
-                Log.d(TAG, "VPN permission already granted")
-            }
+            BlackBoxCore.get().onAfterMainActivityOnCreate(this)
         } catch (e: Exception) {
-            Log.e(TAG, "Error checking VPN permission: ${e.message}")
+            Log.e(TAG, "onAfterMainActivityOnCreate: ${e.message}")
         }
     }
+}
 
-    private val vpnPermissionResult =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+enum class JustuScreen { HOME, IMPORT, MENU }
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
+@Composable
+fun JustuRoot() {
+    val context = LocalContext.current
+
+    // Cargar apps del dispositivo en hilo IO
+    val deviceApps = remember { mutableStateListOf<DeviceApp>() }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val intent = Intent(Intent.ACTION_MAIN).apply { addCategory(Intent.CATEGORY_LAUNCHER) }
+            val pm = context.packageManager
+            val temp = mutableListOf<DeviceApp>()
+            pm.queryIntentActivities(intent, 0).forEach { info ->
+                val pkg = info.activityInfo.applicationInfo.packageName
+                if (pkg == context.packageName) return@forEach
                 try {
-                    if (result.resultCode == RESULT_OK) {
-                        Log.d(TAG, "VPN permission granted!")
-                        
-                    } else {
-                        Log.w(TAG, "VPN permission denied by user")
-                    }
+                    val pkgInfo = pm.getPackageInfo(pkg, 0)
+                    val isSys = (pkgInfo.applicationInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    if (isSys) return@forEach
+                    val labelId = pkgInfo.applicationInfo.labelRes
+                    val label = if (labelId == 0) pkg
+                                else pm.getResourcesForApplication(pkg).getString(labelId)
+                    val icon = pkgInfo.applicationInfo.loadIcon(pm)
+                    val bmp = drawableToBitmap(icon)
+                    temp.add(DeviceApp(pkg, label, bmp))
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error handling VPN permission result: ${e.message}")
+                    Log.e(TAG, "Error loading app $pkg: ${e.message}")
                 }
             }
-
-    private fun showErrorDialog(message: String) {
-        try {
-            MaterialDialog(this).show {
-                title(text = "Error")
-                message(text = message)
-                positiveButton(text = "OK") { finish() }
+            temp.sortBy { it.label.lowercase() }
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                deviceApps.addAll(temp)
             }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error showing error dialog: ${e.message}")
-            finish()
         }
     }
 
-    private fun initToolbarSubTitle() {
+    // Cargar espacios guardados
+    val spaces = remember { mutableStateListOf<CloneSpace>() }
+    LaunchedEffect(deviceApps.size) {
+        if (deviceApps.isEmpty() || spaces.isNotEmpty()) return@LaunchedEffect
+        val count = loadSpaceCount(context)
+
+        // Crear usuarios en BlackBox si no existen
         try {
-            updateUserRemark(0)
-            
-            viewBinding.toolbarLayout.toolbar.getChildAt(1)?.setOnClickListener {
-                try {
-                    MaterialDialog(this).show {
-                        title(res = R.string.userRemark)
-                        input(
-                                hintRes = R.string.userRemark,
-                                prefill = viewBinding.toolbarLayout.toolbar.subtitle
-                        ) { _, input ->
-                            try {
-                                AppManager.mRemarkSharedPreferences.edit {
-                                    putString("Remark$currentUser", input.toString())
-                                    viewBinding.toolbarLayout.toolbar.subtitle = input
-                                }
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error saving user remark: ${e.message}")
-                            }
-                        }
-                        positiveButton(res = R.string.done)
-                        negativeButton(res = R.string.cancel)
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error showing remark dialog: ${e.message}")
-                }
+            val existingUsers = BlackBoxCore.get().users
+            for (i in existingUsers.size until count) {
+                BlackBoxCore.get().createUser("Espacio ${i + 1}")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in initToolbarSubTitle: ${e.message}")
+            Log.e(TAG, "Error creating users: ${e.message}")
+        }
+
+        for (i in 1..count) {
+            val pkgs = loadSpacePkgs(context, i)
+            val spaceApps = mutableStateListOf<DeviceApp>()
+            pkgs.forEach { pkg ->
+                val app = deviceApps.find { it.pkgName == pkg }
+                if (app != null) spaceApps.add(app)
+            }
+            spaces.add(CloneSpace(i, i - 1, spaceApps))
         }
     }
 
-    private fun initViewPager() {
-        try {
-            val userList = BlackBoxCore.get().users
-            userList.forEach { fragmentList.add(AppsFragment.newInstance(it.id)) }
+    if (spaces.isEmpty() && deviceApps.isNotEmpty()) {
+        LaunchedEffect(Unit) {
+            if (spaces.isEmpty()) {
+                try { BlackBoxCore.get().createUser("Espacio 1") } catch (e: Exception) {}
+                spaces.add(CloneSpace(1, 0))
+            }
+        }
+    }
 
-            currentUser = userList.firstOrNull()?.id ?: 0
-            fragmentList.add(AppsFragment.newInstance(userList.size))
+    var screen      by remember { mutableStateOf(JustuScreen.HOME) }
+    var targetSpace by remember { mutableStateOf(0) }
+    var searchQuery by remember { mutableStateOf("") }
+    var toastMsg    by rememberSaveable { mutableStateOf("") }
+    var showToast   by rememberSaveable { mutableStateOf(false) }
 
-            mViewPagerAdapter = ViewPagerAdapter(this)
-            mViewPagerAdapter.replaceData(fragmentList)
-            viewBinding.viewPager.adapter = mViewPagerAdapter
-            viewBinding.dotsIndicator.setViewPager2(viewBinding.viewPager)
-            viewBinding.viewPager.registerOnPageChangeCallback(
-                    object : ViewPager2.OnPageChangeCallback() {
-                        override fun onPageSelected(position: Int) {
-                            try {
-                                super.onPageSelected(position)
-                                currentUser = fragmentList[position].userID
-                                updateUserRemark(currentUser)
-                                showFloatButton(true)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "Error in onPageSelected: ${e.message}")
-                            }
-                        }
+    fun toast(msg: String) { toastMsg = msg; showToast = true }
+
+    // Guardar cuando cambian los espacios
+    LaunchedEffect(spaces.size, spaces.map { it.apps.size }.sum()) {
+        if (spaces.isNotEmpty()) saveSpacesData(context, spaces)
+    }
+
+    Box(Modifier.fillMaxSize()) {
+        when (screen) {
+            JustuScreen.HOME -> JustuHomeScreen(
+                spaces     = spaces,
+                onOpenMenu = { screen = JustuScreen.MENU },
+                onAddSpace = {
+                    val newId = spaces.size + 1
+                    val userId = newId - 1
+                    try { BlackBoxCore.get().createUser("Espacio $newId") } catch (e: Exception) {}
+                    spaces.add(CloneSpace(newId, userId))
+                    saveSpacesData(context, spaces)
+                    toast("Espacio $newId creado ✓")
+                },
+                onImport    = { spaceIdx -> targetSpace = spaceIdx; searchQuery = ""; screen = JustuScreen.IMPORT },
+                onRemoveApp = { spaceIdx, pkg ->
+                    val space = spaces.getOrNull(spaceIdx)
+                    space?.apps?.removeIf { it.pkgName == pkg }
+                    try {
+                        BlackBoxCore.get().uninstallPackageAsUser(pkg, space?.userId ?: 0)
+                    } catch (e: Exception) {}
+                    saveSpacesData(context, spaces)
+                    toast("App eliminada")
+                },
+                onStartApp  = { spaceIdx, app ->
+                    val space = spaces.getOrNull(spaceIdx)
+                    val userId = space?.userId ?: 0
+                    try {
+                        val result = BlackBoxCore.get().launchApk(app.pkgName, userId)
+                        if (!result) toast("Error al iniciar ${app.label}")
+                    } catch (e: Exception) {
+                        toast("Error: ${e.message}")
                     }
+                },
+                toast = ::toast
             )
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initViewPager: ${e.message}")
-        }
-    }
-
-    private fun initFab() {
-        try {
-            viewBinding.fab.setOnClickListener {
-                try {
-                    val userId = viewBinding.viewPager.currentItem
-                    val intent = Intent(this, ListActivity::class.java)
-                    intent.putExtra("userID", userId)
-                    apkPathResult.launch(intent)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error launching ListActivity: ${e.message}")
-                }
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in initFab: ${e.message}")
-        }
-    }
-
-    fun showFloatButton(show: Boolean) {
-        try {
-            val tranY: Float = Resolution.convertDpToPixel(120F, App.getContext())
-            val time = 200L
-            if (show) {
-                viewBinding.fab.animate().translationY(0f).alpha(1f).setDuration(time).start()
-            } else {
-                viewBinding.fab.animate().translationY(tranY).alpha(0f).setDuration(time).start()
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in showFloatButton: ${e.message}")
-        }
-    }
-
-    fun scanUser() {
-        try {
-            val userList = BlackBoxCore.get().users
-
-            if (fragmentList.size == userList.size) {
-                fragmentList.add(AppsFragment.newInstance(fragmentList.size))
-            } else if (fragmentList.size > userList.size + 1) {
-                fragmentList.removeLast()
-            }
-
-            mViewPagerAdapter.notifyDataSetChanged()
-        } catch (e: Exception) {
-            Log.e(TAG, "Error in scanUser: ${e.message}")
-        }
-    }
-
-    private fun updateUserRemark(userId: Int) {
-        try {
-            var remark =
-                    AppManager.mRemarkSharedPreferences.getString("Remark$userId", "User $userId")
-            if (remark.isNullOrEmpty()) {
-                remark = "User $userId"
-            }
-
-            viewBinding.toolbarLayout.toolbar.subtitle = remark
-        } catch (e: Exception) {
-            Log.e(TAG, "Error updating user remark: ${e.message}")
-            viewBinding.toolbarLayout.toolbar.subtitle = "User $userId"
-        }
-    }
-
-    private val apkPathResult =
-            registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-                try {
-                    if (it.resultCode == RESULT_OK) {
-                        it.data?.let { data ->
-                            val userId = data.getIntExtra("userID", 0)
-                            val source = data.getStringExtra("source")
-                            if (source != null) {
-                                fragmentList[userId].installApk(source)
+            JustuScreen.IMPORT -> JustuImportScreen(
+                deviceApps  = deviceApps,
+                searchQuery = searchQuery,
+                onSearch    = { searchQuery = it },
+                onBack      = { screen = JustuScreen.HOME },
+                onAddApp    = { app ->
+                    val space = spaces.getOrNull(targetSpace)
+                    if (space != null) {
+                        if (space.apps.any { it.pkgName == app.pkgName }) {
+                            toast("Ya está en Espacio ${space.id}")
+                        } else {
+                            try {
+                                BlackBoxCore.get().installPackageAsUser(app.pkgName, space.userId)
+                                space.apps.add(app)
+                                saveSpacesData(context, spaces)
+                                toast("${app.label} clonado en Espacio ${space.id} ✓")
+                            } catch (e: Exception) {
+                                toast("Error al clonar ${app.label}")
                             }
                         }
                     }
-                } catch (e: Exception) {
-                    Log.e(TAG, "Error handling APK path result: ${e.message}")
+                }
+            )
+            JustuScreen.MENU -> JustuMenuScreen(
+                onBack       = { screen = JustuScreen.HOME },
+                onImportApps = { targetSpace = 0; screen = JustuScreen.IMPORT },
+                toast        = ::toast
+            )
+        }
+
+        // Toast flotante
+        if (showToast && toastMsg.isNotEmpty()) {
+            LaunchedEffect(toastMsg) {
+                kotlinx.coroutines.delay(2200)
+                showToast = false
+            }
+            Box(Modifier.fillMaxSize().padding(bottom = 90.dp), contentAlignment = Alignment.BottomCenter) {
+                Surface(shape = RoundedCornerShape(50), color = AccentBlue, elevation = 8.dp) {
+                    Text(toastMsg, color = Color.White,
+                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 11.dp),
+                        fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+// ─── HOME ─────────────────────────────────────────────────────────────────────
+@Composable
+fun JustuHomeScreen(
+    spaces:      List<CloneSpace>,
+    onOpenMenu:  () -> Unit,
+    onAddSpace:  () -> Unit,
+    onImport:    (Int) -> Unit,
+    onRemoveApp: (Int, String) -> Unit,
+    onStartApp:  (Int, DeviceApp) -> Unit,
+    toast:       (String) -> Unit
+) {
+    Scaffold(
+        backgroundColor = BgDark,
+        floatingActionButton = {
+            FloatingActionButton(onClick = onAddSpace, backgroundColor = AccentBlue, contentColor = Color.White) {
+                Icon(Icons.Filled.Add, contentDescription = "Nuevo espacio")
+            }
+        }
+    ) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 88.dp)) {
+            item {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 20.dp, end = 12.dp, top = 50.dp, bottom = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("JustuMulticlones", fontSize = 22.sp, fontWeight = FontWeight.Black, color = TextPrimary)
+                    IconButton(onClick = onOpenMenu) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Menú", tint = TextPrimary)
+                    }
                 }
             }
 
-    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
-        try {
-            menuInflater.inflate(R.menu.menu_main, menu)
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error creating options menu: ${e.message}")
-            return false
-        }
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        try {
-            when (item.itemId) {
-                R.id.main_git -> {
-                    val intent =
-                            Intent(
-                                    Intent.ACTION_VIEW,
-                                    Uri.parse("https://github.com/ALEX5402/NewBlackbox")
-                            )
-                    startActivity(intent)
-                }
-                R.id.main_setting -> {
-                    SettingActivity.start(this)
-                }
-                R.id.main_tg -> {
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse("https://t.me/newblackboxa"))
-                    startActivity(intent)
-                }
-                R.id.fake_location -> {
-                    
-                    val intent = Intent(this, FakeManagerActivity::class.java)
-                    intent.putExtra("userID", 0)
-                    startActivity(intent)
-                }
+            items(spaces.indices.toList()) { idx ->
+                val space = spaces[idx]
+                JustuSpaceCard(
+                    space       = space,
+                    onImport    = { onImport(idx) },
+                    onRemoveApp = { pkg -> onRemoveApp(idx, pkg) },
+                    onStartApp  = { app -> onStartApp(idx, app) }
+                )
+                Spacer(Modifier.height(12.dp))
             }
 
-            return true
-        } catch (e: Exception) {
-            Log.e(TAG, "Error handling menu item selection: ${e.message}")
-            return false
+            item {
+                Box(
+                    Modifier.padding(horizontal = 16.dp).fillMaxWidth()
+                        .clip(RoundedCornerShape(18.dp))
+                        .border(2.dp, DividerColor, RoundedCornerShape(18.dp))
+                        .clickable { onAddSpace() }.padding(vertical = 20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Add, contentDescription = null, tint = TextSecond)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Nuevo espacio", color = TextSecond, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
         }
     }
+}
+
+// ─── Tarjeta Espacio ──────────────────────────────────────────────────────────
+@Composable
+fun JustuSpaceCard(
+    space:       CloneSpace,
+    onImport:    () -> Unit,
+    onRemoveApp: (String) -> Unit,
+    onStartApp:  (DeviceApp) -> Unit
+) {
+    Surface(Modifier.padding(horizontal = 16.dp).fillMaxWidth(), color = CardDark, shape = RoundedCornerShape(18.dp), elevation = 2.dp) {
+        Column(Modifier.padding(14.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Surface(shape = RoundedCornerShape(8.dp), color = AccentBlue) {
+                    Text("Espacio ${space.id}", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.ExtraBold,
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp))
+                }
+                IconButton(onClick = onImport, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Filled.Add, contentDescription = "Clonar", tint = AccentBlue, modifier = Modifier.size(22.dp))
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+
+            if (space.apps.isEmpty()) {
+                Box(Modifier.fillMaxWidth().padding(vertical = 28.dp), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("📱", fontSize = 32.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Toca + para clonar apps", color = TextSecond, fontSize = 13.sp)
+                    }
+                }
+            } else {
+                space.apps.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth().padding(bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        row.forEach { app ->
+                            JustuAppItem(app = app, onClick = { onStartApp(app) }, onLongClick = { onRemoveApp(app.pkgName) }, modifier = Modifier.weight(1f))
+                        }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── App Item ─────────────────────────────────────────────────────────────────
+@Composable
+fun JustuAppItem(app: DeviceApp, onClick: () -> Unit, onLongClick: () -> Unit, modifier: Modifier = Modifier) {
+    Column(modifier = modifier.combinedClickable(onClick = onClick, onLongClick = onLongClick), horizontalAlignment = Alignment.CenterHorizontally) {
+        Image(bitmap = app.bitmap, contentDescription = app.label, modifier = Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
+        Spacer(Modifier.height(5.dp))
+        Text(app.label, fontSize = 10.sp, color = TextPrimary.copy(alpha = 0.9f), fontWeight = FontWeight.SemiBold,
+            maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
+    }
+}
+
+// ─── IMPORT ───────────────────────────────────────────────────────────────────
+@Composable
+fun JustuImportScreen(deviceApps: List<DeviceApp>, searchQuery: String, onSearch: (String) -> Unit, onBack: () -> Unit, onAddApp: (DeviceApp) -> Unit) {
+    val filtered = remember(searchQuery, deviceApps.size) {
+        if (searchQuery.isBlank()) deviceApps
+        else deviceApps.filter { it.label.contains(searchQuery, true) || it.pkgName.contains(searchQuery, true) }
+    }
+
+    Scaffold(
+        backgroundColor = BgDark,
+        topBar = {
+            TopAppBar(backgroundColor = CardDark, elevation = 0.dp,
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = TextPrimary) } },
+                title = { Text("Clonar App", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) })
+        }
+    ) { padding ->
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            item {
+                OutlinedTextField(value = searchQuery, onValueChange = onSearch,
+                    placeholder = { Text("Buscar app...", color = TextSecond) },
+                    leadingIcon = { Icon(Icons.Filled.Search, null, tint = TextSecond) },
+                    singleLine = true, modifier = Modifier.fillMaxWidth().padding(16.dp),
+                    colors = TextFieldDefaults.outlinedTextFieldColors(textColor = TextPrimary, backgroundColor = CardDark,
+                        focusedBorderColor = AccentBlue, unfocusedBorderColor = DividerColor, cursorColor = AccentBlue),
+                    shape = RoundedCornerShape(14.dp))
+            }
+            item {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Apps instaladas", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TextSecond)
+                    Text("${filtered.size} apps", fontSize = 12.sp, color = TextSecond)
+                }
+            }
+            if (deviceApps.isEmpty()) {
+                item {
+                    Box(Modifier.fillMaxWidth().padding(vertical = 48.dp), contentAlignment = Alignment.Center) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator(color = AccentBlue)
+                            Spacer(Modifier.height(12.dp))
+                            Text("Cargando apps...", color = TextSecond, fontSize = 14.sp)
+                        }
+                    }
+                }
+            } else {
+                items(filtered) { app ->
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Image(bitmap = app.bitmap, contentDescription = app.label, modifier = Modifier.size(48.dp).clip(RoundedCornerShape(13.dp)))
+                        Spacer(Modifier.width(14.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(app.label, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(app.pkgName, color = TextSecond, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = { onAddApp(app) }) {
+                            Icon(Icons.Filled.Add, null, tint = AccentBlue, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    Divider(color = DividerColor, thickness = 0.5.dp)
+                }
+            }
+            item { Spacer(Modifier.height(32.dp)) }
+        }
+    }
+}
+
+// ─── MENÚ ─────────────────────────────────────────────────────────────────────
+@Composable
+fun JustuMenuScreen(onBack: () -> Unit, onImportApps: () -> Unit, toast: (String) -> Unit) {
+    val context = LocalContext.current
+    val items = listOf(
+        "Clonar Apps"          to onImportApps,
+        "Activar Google Play"  to {
+            try {
+                val users = BlackBoxCore.get().users
+                users.forEach { user ->
+                    listOf("com.google.android.gms", "com.google.android.gsf", "com.android.vending")
+                        .forEach { pkg -> try { BlackBoxCore.get().installPackageAsUser(pkg, user.id) } catch (e: Exception) {} }
+                }
+                toast("Google Play activado ✓")
+            } catch (e: Exception) { toast("Error al activar Google Play") }
+        },
+        "Info del dispositivo" to { toast("Android ${android.os.Build.VERSION.RELEASE} — ${android.os.Build.MODEL}") }
+    )
+    Scaffold(
+        backgroundColor = BgDark,
+        topBar = {
+            TopAppBar(backgroundColor = CardDark, elevation = 0.dp,
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Filled.ArrowBack, null, tint = TextPrimary) } },
+                title = { Text("Menú", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) })
+        }
+    ) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            items.forEachIndexed { i, (label, action) ->
+                Row(Modifier.fillMaxWidth().clickable { action() }.padding(horizontal = 24.dp, vertical = 20.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text(label, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = if (i == 0) Color(0xFF4FC3F7) else TextPrimary)
+                    Icon(Icons.Filled.ChevronRight, null, tint = TextSecond)
+                }
+                Divider(color = DividerColor, thickness = 0.5.dp)
+            }
+        }
+    }
+}
+
+// ─── Utilidad ─────────────────────────────────────────────────────────────────
+fun drawableToBitmap(icon: Drawable): ImageBitmap {
+    val bmp = Bitmap.createBitmap(icon.intrinsicWidth, icon.intrinsicHeight, Bitmap.Config.ARGB_8888)
+    val c = Canvas(); c.setBitmap(bmp)
+    icon.setBounds(0, 0, c.width, c.height); icon.draw(c)
+    c.setBitmap(null)
+    return bmp.asImageBitmap()
 }

@@ -154,7 +154,7 @@ fun JustuRoot() {
         try {
             val existingUsers = BlackBoxCore.get().users
             for (i in existingUsers.size until count) {
-                BlackBoxCore.get().createUser("Espacio ${i + 1}")
+                BlackBoxCore.get().createUser(i - 1)
             }
         } catch (e: Exception) { Log.e(TAG, "createUser: ${e.message}") }
 
@@ -168,7 +168,7 @@ fun JustuRoot() {
 
     LaunchedEffect(deviceApps.size) {
         if (spaces.isEmpty() && deviceApps.isNotEmpty()) {
-            try { BlackBoxCore.get().createUser("Espacio 1") } catch (e: Exception) {}
+            try { BlackBoxCore.get().createUser(0) } catch (e: Exception) {}
             spaces.add(CloneSpace(1, 0))
         }
     }
@@ -192,7 +192,7 @@ fun JustuRoot() {
                 onOpenMenu = { screen = JustuScreen.MENU },
                 onAddSpace = {
                     val newId = spaces.size + 1
-                    try { BlackBoxCore.get().createUser("Espacio $newId") } catch (e: Exception) {}
+                    try { BlackBoxCore.get().createUser(newId - 1) } catch (e: Exception) {}
                     spaces.add(CloneSpace(newId, newId - 1))
                     saveSpacesData(context, spaces)
                     toast("Espacio $newId creado ✓")

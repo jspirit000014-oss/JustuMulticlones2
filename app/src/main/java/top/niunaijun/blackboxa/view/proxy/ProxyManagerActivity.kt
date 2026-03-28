@@ -86,9 +86,7 @@ class ProxyManagerActivity : BaseActivity() {
         btnShow.setOnClickListener {
             val proxy = repo.getProxy(userId)
             val device = repo.getSpoofedDevice(userId)
-            val msg = "Proxy: ${proxy?.first ?: "Ninguno"}:${proxy?.second ?: ""}
-Android ID: ${device?.first ?: "Original"}
-Modelo: ${device?.second ?: "Original"}"
+            val msg = "Proxy: ${proxy?.first ?: \"Ninguno\"}:${proxy?.second ?: \"\"}\nAndroid ID: ${device?.first ?: \"Original\"}\nModelo: ${device?.second ?: \"Original\"}"
             Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
         }
 

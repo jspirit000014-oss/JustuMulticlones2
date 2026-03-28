@@ -41,6 +41,7 @@
         </activity>
         <activity android:name=".view.list.ListActivity" />
         <activity android:name=".view.fake.FakeManagerActivity" />
+        <activity android:name=".view.proxy.ProxyManagerActivity" />
 
         <activity
             android:name=".view.main.ShortcutActivity"

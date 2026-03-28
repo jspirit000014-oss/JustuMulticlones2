@@ -422,7 +422,13 @@ fun JustuMenuScreen(onBack: () -> Unit, onImportApps: () -> Unit, toast: (String
                 toast("Google Play activado ✓")
             } catch (e: Exception) { toast("Error al activar Google Play") }
         },
-        "Info del dispositivo" to { toast("Android ${android.os.Build.VERSION.RELEASE} — ${android.os.Build.MODEL}") }
+        "Info del dispositivo" to { toast("Android ${android.os.Build.VERSION.RELEASE} — ${android.os.Build.MODEL}") },
+        "Privacidad por Clon" to {
+            try {
+                val userId = BlackBoxCore.get().users.firstOrNull()?.id ?: 0
+                top.niunaijun.blackboxa.view.proxy.ProxyManagerActivity.start(context, userId)
+            } catch (e: Exception) { toast("Error al abrir Privacidad") }
+        }
     )
     Scaffold(backgroundColor = BgDark,
         topBar = {

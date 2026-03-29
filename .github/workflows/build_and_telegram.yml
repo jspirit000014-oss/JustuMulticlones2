@@ -132,3 +132,8 @@ jobs:
               -d message_id="$MESSAGE_ID"
           done
 
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JustuMulticlones-debug
+          path: app/build/outputs/apk/debug/*.apk

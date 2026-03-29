@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.platform.LocalContext
 import top.niunaijun.blackbox.BlackBoxCore
 
 // ─── Colores ──────────────────────────────────────────────────────────────────
@@ -411,6 +412,7 @@ fun JustuImportScreen(deviceApps: List<DeviceApp>, searchQuery: String, onSearch
 // ─── MENÚ ─────────────────────────────────────────────────────────────────────
 @Composable
 fun JustuMenuScreen(onBack: () -> Unit, onImportApps: () -> Unit, toast: (String) -> Unit) {
+    val context = LocalContext.current
     val items = listOf(
         "Clonar Apps" to onImportApps,
         "Activar Google Play" to {
